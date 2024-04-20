@@ -42,15 +42,21 @@
 }
 
 .log-in-button {
-  background-color: #1DB954;
+  background-color: hsl(141, 73%, 42%);
   font-size: 16px;
   border-radius: 12px;
   transition-duration: 0.2s;
   border: 0px;
-  
 }
 
 .log-in-button:hover {
-  background-color: #57e589;
+  background-color: hsl(141, 73%, 52%);
 }
 
+.log-in-button:active {
+  background-color: hsl(141, 73%, 42%);
+}
+
+.log-in-button:focus {
+  outline:none;
+}
