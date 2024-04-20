@@ -4,7 +4,6 @@ import viteLogo from '/vite.svg'
 import './App.css'
 
 function App() {
-  const [currentTime, setCurrentTime] = useState(0)
   const [isVisible, setIsVisible] = useState(false);
 
   const handleClick = () => {
@@ -15,12 +14,6 @@ function App() {
       setIsVisible(false);
     }, 2000); // Adjust this value to control how long the text stays visible before disappearing
   };
-
-  useEffect(() => {
-    fetch('http://localhost:5000/time').then(res => res.json()).then(data => {
-      setCurrentTime(data.time);
-    });
-  });
 
   return (
     <>
