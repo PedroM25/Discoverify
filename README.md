@@ -1,1 +1,2 @@
-This is a readme
+Our group didn't manage to completely terminate the backend.
+
