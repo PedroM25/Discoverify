@@ -1,6 +1,9 @@
 import time
 from flask import Flask, redirect, request, session, url_for, render_template
 import requests
+import pandas as pd
+import json
+import subprocess
 
 app = Flask(__name__)
 app.secret_key = "your_secret_key"  # Change this to a random secret key
@@ -22,7 +25,7 @@ def spotify_login():
         f"client_id={CLIENT_ID}&"
         "response_type=code&"
         f"redirect_uri={REDIRECT_URI}&"
-        "scope=user-read-private%20user-top-read%20playlist-modify-public"  # Add playlist-modify-public scope
+        "scope=user-read-private%20user-top-read%20playlist-modify-public%20playlist-modify-private"  # Add playlist scopes
     )
     return redirect(auth_url)
 
@@ -68,7 +71,7 @@ def profile():
                 top_artists_data = response.json()
                 artists = [artist['name'] for artist in top_artists_data['items']]
                 data = {"display_name": profile_data['display_name'], "id": profile_data['id'], "top_artists": artists}
-                return render_template('', data=data)
+                return f"name: {profile_data['display_name']}" #render_template('create_playlist', data=data)
             else:
                 error_message = f"Failed to fetch top artists. Response: {response.text}"
                 return error_message, response.status_code
@@ -77,74 +80,104 @@ def profile():
     else:
         return redirect(url_for('index'))
 
+    
 @app.route('/create_playlist', methods=['POST'])
 def create_playlist():
-    # Fetch user profile using the access token
     access_token = session.get('access_token')
     if access_token:
-        # Get song data from the JSON request
-        data = request.json
 
-        # Assume data is a list of tuples, first value name of the song, second a list with the artists
-        songs = data.get('songs')
-        song_titles = [t[0] for t in songs]
-        song_artists = [t[1] for t in songs]
-                
-        # Create playlist
-        create_playlist_url = "https://api.spotify.com/v1/me/playlists"
-        headers = {
-            'Authorization': f'Bearer {access_token}',
-            'Content-Type': 'application/json'
-        }
-        playlist_data = {
-            'name': 'My New Playlist',
-            'description': 'This is my new playlist created by my Flask app!'
-        }
+        try:
+            subprocess.run(['python', 'file_b.py'], check=True)
+        except subprocess.CalledProcessError as e:
+            print("Error while running file B:", e)
+        
+        data = pd.read_csv('discoverify-backend/data/playlist_scores.csv')
+        data = data.iloc[0:15, :]
 
-        response = requests.post(create_playlist_url, headers=headers, json=playlist_data)
-        if response.status_code == 201:
-            
-            playlist_id = response.json()['id']
-            
-            # Add songs to the playlist
-            add_tracks_url = f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks"
+        names = data.iloc[:, 1].values.tolist()
+        artists = data.iloc[:, 0].values.tolist()
+        size = len(names)
 
-            for i in range(len(song_titles)):
-                # Search for the track based on name and artist
-                search_url = "https://api.spotify.com/v1/search"
-                params = {
-                    'q': f"track:{song_titles[i]} artist:{song_artists[i][0]}",
-                    'type': 'track',
-                    'limit': 1
+        # Initialize an empty list to store track URIs
+        track_uris = []
+        # Iterate over the tracks and search for each track on Spotify
+        for i in range(size):
+            search_url = "https://api.spotify.com/v1/search"
+            params = {
+                'q': f"{names[i]} artist:{artists[i]}",
+                'type': 'track',
+                'limit': 1
+            }
+            headers = {
+                'Authorization': f'Bearer {access_token}'
+            }
+            response = requests.get(search_url, headers=headers, params=params)
+            if response.status_code == 200:
+                # Extract the track URI from the response and append it to the list
+                track_data = response.json()['tracks']['items']
+                if track_data:
+                    track_uris.append(track_data[0]['uri'])
+        # Once all track URIs are obtained, create the playlist and add tracks to it
+        if track_uris:
+            create_playlist_url = "https://api.spotify.com/v1/me/playlists"
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json'
+            }
+            playlist_data = {
+                'name': 'My new playlist',
+                'description': 'This is my new playlist created by Discoverify!',
+                'public': False  # You can change this as needed
+            }
+            response = requests.post(create_playlist_url, headers=headers, data=json.dumps(playlist_data))
+            if response.status_code == 201:
+                playlist_id = response.json()['id']
+                # Add tracks to the playlist
+                add_tracks_url = f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks"
+                data = {
+                    'uris': track_uris
                 }
-                response = requests.get(search_url, headers=headers, params=params)
+                response = requests.post(add_tracks_url, headers=headers, data=json.dumps(data))
+                print(response.status_code)
                 if response.status_code == 200:
-                
-                    tracks = response.json()['tracks']['items']
-                    if tracks:
-                        track_uri = tracks[0]['uri']
-                    
-                        data = {
-                            'uris': [track_uri]
-                        }
-                        response = requests.post(add_tracks_url, headers=headers, json=data)
-                        if response.status_code == 200:
-                            continue
-                            # Redirect to display endpoint with playlist_id
-                            # return redirect(url_for(f'display_playlist', playlist_id=playlist_id))
-                        else:
-                            error_message = f"Failed to add song to playlist. Response: {response.text}"
-                            return error_message, response.status_code
-                    else:
-                        return f"Song '{song_titles[i]}' by '{song_artists[i]}' not found", 404
+                    return "Playlist created and tracks added successfully!", 201
                 else:
-                    return "Failed to search for tracks", response.status_code
+                    error_message = f"Failed to add tracks to playlist. Response: {response.text}"
+                    return error_message, response.status_code
+            else:
+                error_message = f"Failed to create playlist. Response: {response.text}"
+                return error_message, response.status_code
         else:
-            error_message = f"Failed to create playlist. Response: {response.text}"
-            return error_message, response.status_code
+            return "No tracks found or no track URIs obtained", 404
     else:
         return redirect(url_for('index'))
 
+@app.route('/display_playlist/<playlist_id>', methods=['GET'])
+def display_playlist(playlist_id):
+    # Fetch user profile using the access token
+    access_token = session.get('access_token')
+    if access_token:
+        # Get playlist details
+        playlist_url = f"https://api.spotify.com/v1/playlists/{playlist_id}"
+        headers = {
+            'Authorization': f'Bearer {access_token}'
+        }
+        response = requests.get(playlist_url, headers=headers)
+        if response.status_code == 200:
+            playlist = response.json()
+            names = []
+            for item in playlist['tracks']['items']:
+                artists = []
+                for artist in item['track']['artists']:
+                    artists.append(artist['name'])
+                names.append((item['track']['name'], artists))
+            print(names)
+            return "Names printed!"
+        else:
+            error_message = f"Failed to fetch playlist. Response: {response.text}"
+            return error_message, response.status_code
+    else:
+        return redirect(url_for('index'))
 
 if __name__ == '__main__':
     app.run(debug=True)
