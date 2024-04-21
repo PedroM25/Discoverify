@@ -1,0 +1,52 @@
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials
+import re
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Get client ID and client secret from environment variables
+client_id = os.getenv("SPOTIFY_CLIENT_ID")
+client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+
+def get_playlist_songs(playlist_url):
+    # Initialize Spotipy with your credentials
+    client_credentials_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
+    sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+    
+    # Extract playlist ID from URL using regular expression
+    playlist_id = re.findall(r'/playlist/([^/?]+)', playlist_url)[0]
+    
+    # Get tracks from the playlist
+    results = sp.playlist_tracks(playlist_id)
+    
+    # List to store album IDs
+    album_ids = []
+    
+    # Iterate through tracks and extract album IDs
+    for item in results['items']:
+        track = item['track']
+        if track is not None:
+            album_id = track['album']['id']
+            if album_id not in album_ids:
+                album_ids.append(album_id)
+    
+    # List to store all songs
+    all_songs = []
+    
+    # Iterate through album IDs and get tracks
+    for album_id in album_ids:
+        album_tracks = sp.album_tracks(album_id)
+        for track in album_tracks['items']:
+            all_songs.append(track['name'])
+    
+    return all_songs
+
+# Example usage:
+playlist_url = 'https://open.spotify.com/playlist/37i9dQZF1DX4JAvHpjipBk?si=c96f2a225c1f4817'
+playlist_songs = get_playlist_songs(playlist_url)
+print("Songs in the playlist:")
+for song in playlist_songs:
+    print(song)
